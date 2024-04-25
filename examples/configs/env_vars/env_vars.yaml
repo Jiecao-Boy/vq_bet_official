@@ -1,11 +1,12 @@
 
 # TODO fill these out
-dataset_path: PATH_TO_YOUR_[env_name]_DATASET # (i.e. /home/user/vqbet/vqbet_datasets_for_release)
-save_path: YOUR_SAVE_PATH # (i.e. /home/user/vq-bet)
-wandb_entity: YOUR_WANDB_ENTITY
+dataset_path: /media/data/third_person_man/human_action/cube_picking # (i.e. /home/user/vqbet/vqbet_datasets_for_release)
+save_path: /media/data/third_person_man/human_action_deploy/cube_picking # (i.e. /home/user/vq-bet)
+wandb_entity: jiecaoboy
 
 datasets:
     ant: ${env_vars.dataset_path}/ant
     relay_kitchen: ${env_vars.dataset_path}/relay_kitchen
     pusht: ${env_vars.dataset_path}/pusht
     ur3: ${env_vars.dataset_path}/ur3
+    retargeting: ${env_vars.dataset_path}

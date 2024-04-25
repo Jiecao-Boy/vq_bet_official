@@ -11,7 +11,7 @@ from omegaconf import OmegaConf
 from vqvae.vqvae import *
 import wandb
 
-config_name = "pretrain_ant"
+config_name = "pretrain_retargeting"
 
 
 def seed_everything(random_seed: int):
@@ -41,7 +41,11 @@ def main(cfg):
     )
     for epoch in tqdm.trange(cfg.epochs):
         for data in tqdm.tqdm(train_loader):
-            obs, act, goal = (x.to(cfg.device) for x in data)
+            # obs, act, goal = (x.to(cfg.device) for x in data)
+            
+            act = torch.cat(data, dim=0).to(cfg.device)
+            # print("the length of data(act) for this batch is: {}".format(len(data[0])))
+
 
             (
                 encoder_loss,
@@ -61,6 +65,7 @@ def main(cfg):
         if epoch % 50 == 0:
             state_dict = vqvae_model.state_dict()
             torch.save(state_dict, os.path.join(save_path, "trained_vqvae.pt"))
+            print("Model saved to: {}".format(os.path.join(save_path, "trained_vqvae.pt")))
 
 
 if __name__ == "__main__":

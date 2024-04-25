@@ -169,7 +169,10 @@ class VqVae:
                 return state_vq, vq_code
 
     def vqvae_update(self, state):
+        # print('current act {}'.format(state.shape))
         state = state / self.act_scale
+        # print('act_scale {}'.format(self.act_scale))
+        # print('current act {}'.format(state.shape))
         state = self.preprocess(state)
         state_rep = self.encoder(state)
         state_rep_shape = state_rep.shape[:-1]

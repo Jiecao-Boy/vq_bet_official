@@ -1,10 +1,14 @@
+import os
+import re
 import abc
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Sequence
 import h5py
+import glob 
 import einops
 import numpy as np
 import torch
+import pickle
 from torch import default_generator, randperm
 from torch._utils import _accumulate
 from torch.utils.data import Dataset, Subset, TensorDataset
@@ -12,6 +16,9 @@ import pathlib
 import tqdm
 import struct
 import torch.nn.functional as F
+from torchvision import transforms as T
+from torchvision.datasets.folder import default_loader as loader 
+from third_person_man.utils import VISION_IMAGE_MEANS, VISION_IMAGE_STDS, crop_transform, crop_demo, convert_to_demo_frame_ids
 
 
 # loads h5 data into memory for faster access
@@ -180,6 +187,124 @@ class TrajectorySubset(TrajectoryDataset, Subset):
 
     def get_seq_length(self, idx):
         return self.dataset.get_seq_length(self.indices[idx])
+    
+
+## NOTE: retargeting dataset is added
+class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
+    def __init__(
+            self, data_directory, device="cuda", view_num = 0, get_observation = False
+    ):
+        self.data_directory = Path(data_directory)
+        self.view_num = view_num
+
+        self.image_transform = T.Compose([
+            T.Resize((480,640)),
+            T.Lambda(self._crop_transform),
+            T.ToTensor(),
+            T.Normalize(VISION_IMAGE_MEANS, VISION_IMAGE_STDS)
+        ])
+
+        # Get demo cropping index
+        demo_dict = crop_demo(self.data_directory)
+        demo_frame_ids = convert_to_demo_frame_ids(demo_dict)
+
+
+        actions = []
+        observations = []
+        roots = sorted(glob.glob(f'{self.data_directory}/demonstration_*'))
+        for demo_index, demo in enumerate(roots):
+
+            pattern = r'\d+$'
+            demo_num = int(re.findall(pattern, demo)[0])
+            demo_observations = []
+            demo_actions = [] 
+            keypoint_file = Path(demo / 'demo_in_aruco.pkl')
+            representation_file = Path(demo / 'image_representations_cam_{}.pkl'.format(view_num))
+            with open(keypoint_file, 'rb') as file:
+                data = pickle.load(file)
+            with open(representation_file, 'rb') as file:
+                reps = pickle.load(file)
+            
+            clipping_index = demo_frame_ids[demo_num]
+            demo_action_ids = self._get_demo_action_ids(clipping_index, demo_num, view_num)
+            for idx in tqdm.trange(demo_action_ids[0],demo_action_ids[1]):
+                if get_observation:
+                    img_repr = torch.tensor(reps[idx])
+                    demo_observations.append(img_repr)
+
+                fingertips = self.convert_fingertips_to_data_format(data[idx-300])
+                demo_actions.append(fingertips)
+            
+            
+            if get_observation:
+                observations.append(torch.stack(demo_observations))
+            actions.append(torch.stack(demo_actions))
+        # processing the demos
+        # find the longest demo
+        longest_demo = max(actions, key=lambda x: x.size(0))
+        # fill the other demos with 0 to the same length of longest demo
+        self.masks = torch.zeros(len(actions), longest_demo.size(0))
+        for demo_num in range(len(actions)):
+            demo_length = actions[demo_num].size(0)
+            diff = longest_demo.size(0) - demo_length
+            if get_observation: 
+                observations[demo_num] = F.pad(observations[demo_num], (0, 0, 0, diff))
+            actions[demo_num] = F.pad(actions[demo_num], (0, 0, 0, diff))
+            # build masks
+            self.masks[demo_num, :demo_length] = 1
+        if get_observation:
+            observations = torch.stack(observations)
+        self.actions = torch.stack(actions)
+        if get_observation:
+            tensors = [observations, self.actions]
+        else: tensors = [self.actions]
+        tensors = [t.to(device).float() for t in tensors]
+        TensorDataset.__init__(self, *tensors)
+        if get_observation:
+            print('data_size: ', observations.shape, self.actions.shape)
+        else:
+            print('data_size: ', self.actions.shape)
+
+    def _crop_transform(self, image):
+        return crop_transform(image, camera_view=self.view_num) 
+    
+    def convert_fingertips_to_data_format(self, fingertips):
+        finger_types = ['index', 'middle', 'ring', 'thumb', 'index_1', 'middle_1', 'ring_1', 'thumb_1']
+        data = []
+        for finger_type in finger_types:
+            if len(data) == 0:
+                data = fingertips[finger_type].reshape(3)
+            else:
+                data = np.concatenate((data,fingertips[finger_type].reshape(3)))
+        return torch.tensor(data)
+            
+    def _get_demo_action_ids(self, image_frame_ids, demo_num, view_num):
+        action_ids = []
+        # Will traverse through image indices and return the idx that have the image_frame_ids
+        image_indices_path = os.path.join(self.data_directory,'demonstration_{}'.format(demo_num),'image_indices_cam_{}.pkl'.format(view_num))
+        with open(image_indices_path, 'rb') as file:
+            image_indices = pickle.load(file)
+
+        i = 0
+        for action_id, (demo_id, image_id) in enumerate(image_indices):
+            if image_id == image_frame_ids[i]:
+                action_ids.append(action_id)
+                i += 1
+            
+            if i == 2: 
+                break
+
+        return action_ids
+
+    def get_seq_length(self, idx):
+        return int(self.masks[idx].sum().item())
+
+    def __getitem__(self, idx):
+        T = self.masks[idx].sum().int().item()
+        return tuple(x[idx, :T] for x in self.tensors)
+
+
+## NOTE: retargeting dataset is added
 
 
 class RelayKitchenTrajectoryDataset(TensorDataset, TrajectoryDataset):
@@ -459,15 +584,23 @@ class TrajectorySlicerDataset(TrajectoryDataset):
                 ]
         else:
             if end - start < self.window:
-                values = [
-                    torch.unsqueeze(self.dataset[i][0][start], dim=0),
-                    self.dataset[i][1][start : start + self.action_window],
-                ]
+                # values = [
+                #     torch.unsqueeze(self.dataset[i][0][start], dim=0),
+                #     self.dataset[i][1][start : start + self.action_window],
+                # ]
+
+                ## This is considering observation data is not given, for pretrain only
+                ## [0]: observation [1]: action
+                values = [self.dataset[i][0][start : start + self.action_window],]
             else:
-                values = [
-                    torch.unsqueeze(self.dataset[i][0][start], dim=0),
-                    self.dataset[i][1][start : start + self.action_window],
-                ]
+                # values = [
+                #     torch.unsqueeze(self.dataset[i][0][start], dim=0),
+                #     self.dataset[i][1][start : start + self.action_window],
+                # ]
+
+                ## This is considering observation data is not given, for pretrain only
+                ## [0]: observation [1]: action
+                values = [self.dataset[i][0][start : start + self.action_window],]
         if self.get_goal_from_dataset:
             valid_start_range = (
                 end + self.min_future_sep,
@@ -661,6 +794,37 @@ def get_relay_kitchen_train_val(
         vqbet_get_future_action_chunk,
         only_sample_tail=only_sample_tail,
         future_conditional=(goal_conditional == "future"),
+        min_future_sep=min_future_sep,
+        future_seq_len=future_seq_len,
+        transform=transform,
+    )
+
+## NOTE
+def get_retargeting_train_val(
+    data_directory,
+    train_fraction=0.9,
+    random_seed=42,
+    window_size=10,
+    action_window_size=10,
+    vqbet_get_future_action_chunk: bool = True,
+    only_sample_tail: bool = False,
+    future_seq_len: Optional[int] = None,
+    min_future_sep: int = 0,
+    view_num: int = 0, 
+    transform: Optional[Callable[[Any], Any]] = None,
+):
+    return get_train_val_sliced(
+        RetargetingTrajectoryDataset(
+            data_directory,
+            view_num = view_num
+        ),
+        train_fraction,
+        random_seed,
+        window_size,
+        action_window_size,
+        vqbet_get_future_action_chunk,
+        only_sample_tail=only_sample_tail,
+        future_conditional=False,
         min_future_sep=min_future_sep,
         future_seq_len=future_seq_len,
         transform=transform,
