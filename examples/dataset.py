@@ -19,6 +19,7 @@ import torch.nn.functional as F
 from torchvision import transforms as T
 from torchvision.datasets.folder import default_loader as loader 
 from third_person_man.utils import VISION_IMAGE_MEANS, VISION_IMAGE_STDS, crop_transform, crop_demo, convert_to_demo_frame_ids
+from third_person_man.calibration import CalibrateFingertips
 
 
 # loads h5 data into memory for faster access
@@ -205,8 +206,10 @@ class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
         ])
 
         # Get demo cropping index
-        demo_dict = crop_demo(self.data_directory)
+        demo_dict = crop_demo(self.data_directory, view_num)
         demo_frame_ids = convert_to_demo_frame_ids(demo_dict)
+
+
 
 
         actions = []
@@ -218,21 +221,25 @@ class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
             demo_num = int(re.findall(pattern, demo)[0])
             demo_observations = []
             demo_actions = [] 
-            keypoint_file = Path(demo / 'demo_in_aruco.pkl')
-            representation_file = Path(demo / 'image_representations_cam_{}.pkl'.format(view_num))
+            # make sure demo_to_aruco are initialized: 
+            # calibrate_camera_num = 0 
+            # fingertips = CalibrateFingertips(demo, calibrate_camera_num, 0.05, '172.24.71.206', 10005)
+            keypoint_file = Path(demo + '/demo_in_aruco.pkl')
+            representation_file = Path(demo + '/img_representations_cam_{}.pkl'.format(view_num))
             with open(keypoint_file, 'rb') as file:
                 data = pickle.load(file)
             with open(representation_file, 'rb') as file:
                 reps = pickle.load(file)
-            
-            clipping_index = demo_frame_ids[demo_num]
+            print(len(reps))
+
+            clipping_index = demo_frame_ids[str(demo_num)]
             demo_action_ids = self._get_demo_action_ids(clipping_index, demo_num, view_num)
             for idx in tqdm.trange(demo_action_ids[0],demo_action_ids[1]):
                 if get_observation:
                     img_repr = torch.tensor(reps[idx])
-                    demo_observations.append(img_repr)
+                    demo_observations.append(img_repr.squeeze())
 
-                fingertips = self.convert_fingertips_to_data_format(data[idx-300])
+                fingertips = self.convert_fingertips_to_data_format(data[idx-30])
                 demo_actions.append(fingertips)
             
             
@@ -816,7 +823,8 @@ def get_retargeting_train_val(
     return get_train_val_sliced(
         RetargetingTrajectoryDataset(
             data_directory,
-            view_num = view_num
+            view_num = view_num,
+            get_observation= True
         ),
         train_fraction,
         random_seed,

@@ -6,6 +6,7 @@ import re
 import os
 import cv2
 import glob
+import tqdm
 import torch
 import hydra
 import pickle
@@ -81,37 +82,44 @@ def save_image_representations(data_path, out_dir, device, view_num):
         T.ToTensor(),
         T.Normalize(VISION_IMAGE_MEANS, VISION_IMAGE_STDS),
         ])
-    print("ready to load model!!!")
     image_encoder = init_encoder_info(out_dir, device)
-    print("model is loaded!!!")
     roots = sorted(glob.glob(f'{data_path}/demonstration_*'))
     print(roots)
     
-    for demo in roots:
-        demo_representations = ()
-        image_idx_file = Path(demo / 'image_indices_cam_{}.pkl'.format(view_num))
+    for num in tqdm.trange(len(roots)):
+
+        demo = roots[num]
+        demo_representations = []
+        save_path = demo + '/img_representations_cam_{}.pkl'.format(view_num)
+        if os.path.exists(save_path):
+            os.remove(save_path)
+
+        image_idx_file = Path(demo +  '/image_indices_cam_{}.pkl'.format(view_num))
         with open(image_idx_file, 'rb') as file:
-                image_indices = pickle.load(file)
-        for idx in image_indices:
-            image_path = os.path.join(demo, 'cam_{}_rgb_images/frame_{}.png'.format(view_num, str(image_indices[idx][1]).zfill(5)))
-            image = cv2.imread(image_path)
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = im.fromarray(image)
-            image = torch.FloatTensor(image_transform(image))
-            image_repr = image_encoder(image.unsqueeze(dim=0))
-            demo_representations.append(image_repr)
-        demo_representations = torch.stack(demo_representations)
-        print("demo_representation_got!!!")
-        save_path = demo / 'img_representations_cam_{}.pkl'.format(view_num)
-        with open(save_path, 'wb') as file:
-            pickle.dump(demo_representations, file)
+            image_indices = pickle.load(file)
+        
+            for num in tqdm.trange(len(image_indices)):
+                idx = image_indices[num]
+                image_path = os.path.join(demo, 'cam_{}_rgb_images/frame_{}.png'.format(view_num, str(idx[1]).zfill(5)))
+                image = cv2.imread(image_path)
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                image = im.fromarray(image)
+                image = torch.FloatTensor(image_transform(image)).to(device)
+                image = image_encoder(image.unsqueeze(dim=0)).detach().cpu()
+                demo_representations.append(image)
+
+            demo_representations = torch.stack(demo_representations, dim=0)
+            with open(save_path, 'wb') as file:
+                pickle.dump(demo_representations, file)
+            torch.cuda.empty_cache()
     return
 
 if __name__ == '__main__':
-    out_dir = Path('/home/yinlong/Desktop/vq_bet_official/image_encoder/14-10_mustard_picking_byol_seed_5')
+    out_dir = Path('/home/irmak/Workspace/third-person-manipulation/out/2024.04.25/14-10_mustard_picking_byol_seed_5')
     device = torch.device('cuda:0')
     data_path = Path('/data/irmak/third_person_manipulation/mustard_picking')
     view_num =1
     save_image_representations(data_path, out_dir, device, view_num)
+
 
 
