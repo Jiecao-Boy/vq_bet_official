@@ -43,7 +43,7 @@ def main(cfg):
         for data in tqdm.tqdm(train_loader):
             # obs, act, goal = (x.to(cfg.device) for x in data)
             
-            act = torch.cat(data, dim=0).to(cfg.device)
+            obs, act = (x.to(cfg.device) for x in data)
             # print("the length of data(act) for this batch is: {}".format(len(data[0])))
 
 

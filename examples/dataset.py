@@ -225,12 +225,11 @@ class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
             # calibrate_camera_num = 0 
             # fingertips = CalibrateFingertips(demo, calibrate_camera_num, 0.05, '172.24.71.206', 10005)
             keypoint_file = Path(demo + '/demo_in_aruco.pkl')
-            representation_file = Path(demo + '/img_representations_cam_{}.pkl'.format(view_num))
+            representation_file = Path(demo + '/img_byol_representations_cam_{}.pkl'.format(view_num))
             with open(keypoint_file, 'rb') as file:
                 data = pickle.load(file)
             with open(representation_file, 'rb') as file:
                 reps = pickle.load(file)
-            print(len(reps))
 
             clipping_index = demo_frame_ids[str(demo_num)]
             demo_action_ids = self._get_demo_action_ids(clipping_index, demo_num, view_num)
@@ -239,7 +238,7 @@ class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
                     img_repr = torch.tensor(reps[idx])
                     demo_observations.append(img_repr.squeeze())
 
-                fingertips = self.convert_fingertips_to_data_format(data[idx-30])
+                fingertips = self.convert_fingertips_to_data_format(data[idx-10]) ## NOTE: This would change 
                 demo_actions.append(fingertips)
             
             
@@ -497,7 +496,7 @@ class TrajectorySlicerDataset(TrajectoryDataset):
         self.slices = []
         min_seq_length = np.inf
         if vqbet_get_future_action_chunk:
-            min_window_required = window + action_window
+            min_window_required = max(window, action_window) - 1
         else:
             min_window_required = max(window, action_window)
         for i in range(len(self.dataset)):  # type: ignore
@@ -591,23 +590,23 @@ class TrajectorySlicerDataset(TrajectoryDataset):
                 ]
         else:
             if end - start < self.window:
-                # values = [
-                #     torch.unsqueeze(self.dataset[i][0][start], dim=0),
-                #     self.dataset[i][1][start : start + self.action_window],
-                # ]
+                values = [
+                    torch.unsqueeze(self.dataset[i][0][start], dim=0),
+                    self.dataset[i][1][start : start + self.action_window],
+                ]
 
                 ## This is considering observation data is not given, for pretrain only
                 ## [0]: observation [1]: action
-                values = [self.dataset[i][0][start : start + self.action_window],]
+                # values = [self.dataset[i][0][start : start + self.action_window],]
             else:
-                # values = [
-                #     torch.unsqueeze(self.dataset[i][0][start], dim=0),
-                #     self.dataset[i][1][start : start + self.action_window],
-                # ]
+                values = [
+                    torch.unsqueeze(self.dataset[i][0][start], dim=0),
+                    self.dataset[i][1][start : start + self.action_window],
+                ]
 
                 ## This is considering observation data is not given, for pretrain only
                 ## [0]: observation [1]: action
-                values = [self.dataset[i][0][start : start + self.action_window],]
+                # values = [self.dataset[i][0][start : start + self.action_window],]
         if self.get_goal_from_dataset:
             valid_start_range = (
                 end + self.min_future_sep,
@@ -817,7 +816,7 @@ def get_retargeting_train_val(
     only_sample_tail: bool = False,
     future_seq_len: Optional[int] = None,
     min_future_sep: int = 0,
-    view_num: int = 0, 
+    view_num: int = 2, 
     transform: Optional[Callable[[Any], Any]] = None,
 ):
     return get_train_val_sliced(

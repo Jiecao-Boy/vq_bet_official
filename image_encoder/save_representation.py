@@ -73,6 +73,28 @@ def modify_byol_state_dict(state_dict):
     return new_state_dict
 
 
+def dump_video_frames(video_path, output_folder):
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("Error: Could not open video file.")
+        return
+
+    frame_count = 0
+    while True:
+        # Read a frame from the video
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # Save the frame
+        frame_path = f"{output_folder}/frame_{str(frame_count).zfill(5)}.jpg"
+        cv2.imwrite(frame_path, frame)
+        frame_count += 1
+    cap.release()
+
+    return
+
+
 
 def save_image_representations(data_path, out_dir, device, view_num):
     # Load encoder
@@ -87,10 +109,12 @@ def save_image_representations(data_path, out_dir, device, view_num):
     print(roots)
     
     for num in tqdm.trange(len(roots)):
+        # if num != (len(roots) - 1):
+        #     continue 
 
         demo = roots[num]
         demo_representations = []
-        save_path = demo + '/img_representations_cam_{}.pkl'.format(view_num)
+        save_path = demo + '/img_byol_representations_cam_{}.pkl'.format(view_num)
         if os.path.exists(save_path):
             os.remove(save_path)
 
@@ -114,12 +138,68 @@ def save_image_representations(data_path, out_dir, device, view_num):
             torch.cuda.empty_cache()
     return
 
+def save_deployment_representations(deployment_path, out_dir, device, view_num):
+    # Load encoder
+    image_transform = T.Compose([
+        T.Resize((480,640)),
+        T.Lambda(crop_transform),
+        T.ToTensor(),
+        T.Normalize(VISION_IMAGE_MEANS, VISION_IMAGE_STDS),
+        ])
+    image_encoder = init_encoder_info(out_dir, device)
+
+    
+    roots = sorted(glob.glob(f'{deployment_path}/*/1'))
+    print(roots)
+    
+    for root in roots:
+        # First dump the images of videos if the images are not yet dumped
+        if os.path.exists(root + '/deployment_image'):
+            print('deployment images already exists!!!!')
+            continue
+        else:
+            video = root + '/deployment_w_axes.mp4'
+            # create the video path
+            os.makedirs(root + '/deployment_image')
+            dump_video_frames(video, root + '/deployment_image')
+    
+    for num in tqdm.trange(len(roots)):
+        demo = roots[num]
+        demo_representations = []
+        save_path = demo + '/deployment_byol_representations_cam_{}.pkl'.format(view_num)
+        if os.path.exists(save_path):
+            os.remove(save_path)
+
+        # get all the frames
+        image_list = sorted(glob.glob(f'{demo}/deployment_image/frame_*'))
+
+        for idx in tqdm.trange(len(image_list)):
+            image_path = image_list[idx]
+            image = cv2.imread(image_path)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = im.fromarray(image)
+            image = torch.FloatTensor(image_transform(image)).to(device)
+            image = image_encoder(image.unsqueeze(dim=0)).detach().cpu()
+            demo_representations.append(image)
+
+        demo_representations = torch.stack(demo_representations, dim=0)
+        with open(save_path, 'wb') as file:
+            pickle.dump(demo_representations, file)
+        torch.cuda.empty_cache()
+    return
+
+    
 if __name__ == '__main__':
-    out_dir = Path('/home/irmak/Workspace/third-person-manipulation/out/2024.04.25/14-10_mustard_picking_byol_seed_5')
+    out_dir = Path('/home/irmak/Workspace/third-person-manipulation/out/2024.05.21/18-32_detergent_new_1_byol_seed_5')
     device = torch.device('cuda:0')
-    data_path = Path('/data/irmak/third_person_manipulation/mustard_picking')
-    view_num =1
+    data_path = Path('/data/irmak/third_person_manipulation/detergent_new_1')
+    view_num =2
+
+    save_deployment = True 
+    deployment_path = Path('/data/irmak/third_person_manipulation/deployments/detergent_new_1')
     save_image_representations(data_path, out_dir, device, view_num)
+    if save_deployment: 
+        save_deployment_representations(deployment_path,out_dir, device, view_num )
 
 
 

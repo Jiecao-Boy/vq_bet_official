@@ -3,7 +3,7 @@ defaults:
   - _self_
 
 seed: 42
-window_size: 10
+window_size: 5
 goal_window_size: 10
 eval_window_size: 10
 # batch_size: 1024
@@ -15,18 +15,7 @@ num_env_evals: 5
 num_final_evals: 20
 num_final_eval_per_goal: 5
 action_window_size: 1
-# clipping_index_list: 
-#   - [410, 640]
-#   - [125, 210]
-#   - [310, 405]
-#   - [465, 690]
-#   - [565, 790]
-#   - [420, 585]
-#   - [490, 660]
-#   - [415, 625]
-#   - [415, 625]
-#   - [500, 730]
-view_num: 0
+view_num: 2
 
 
 wandb:
@@ -58,7 +47,7 @@ load_path: null
 
 vqvae_model:
   _target_: vqvae.VqVae
-  obs_dim: TODO
+  obs_dim: 512
   input_dim_h: ${action_window_size}
   # input_dim_w: ${env.act_dim}
   input_dim_w: 24

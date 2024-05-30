@@ -132,6 +132,7 @@ class BehaviorTransformer(nn.Module):
             if obs_seq.ndim == 3:
                 obs_seq = obs_seq.clone().detach()
                 obs_seq = self._resnet_header(obs_seq)
+                # print("obs after resnet header: {}".format(obs_seq.shape))
             else:
                 N = obs_seq.shape[0]
                 if obs_seq.shape[-1] == 3:
@@ -175,6 +176,7 @@ class BehaviorTransformer(nn.Module):
                     goal_seq = self._resnet_header(goal_seq)
                     goal_seq = einops.rearrange(goal_seq, "(N T) L -> N T L", N=N)
         if obs_seq.shape[1] < self.obs_window_size:
+            print('**********obs shape in first dimension:{}'.format(obs_seq.shape[1]))
             obs_seq = torch.cat(
                 (
                     torch.tile(

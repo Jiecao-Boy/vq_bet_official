@@ -1,7 +1,7 @@
 
 # TODO fill these out
-dataset_path: /media/data/third_person_man/human_action/cube_picking # (i.e. /home/user/vqbet/vqbet_datasets_for_release)
-save_path: /media/data/third_person_man/human_action_deploy/cube_picking # (i.e. /home/user/vq-bet)
+dataset_path: /data/irmak/third_person_manipulation/detergent_new_1 # (i.e. /home/user/vqbet/vqbet_datasets_for_release)
+save_path: /home/irmak/Workspace/third-person-manipulation/out # (i.e. /home/user/vq-bet)
 wandb_entity: jiecaoboy
 
 datasets:

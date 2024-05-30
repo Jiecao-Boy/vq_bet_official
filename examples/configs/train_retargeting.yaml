@@ -3,20 +3,24 @@ defaults:
   - _self_
 
 seed: 42
-window_size: TODO
-goal_window_size: TODO
-eval_window_size: TODO
-batch_size: 1024
-epochs: TODO
+window_size: 5
+goal_window_size: 0
+eval_window_size: 5
+# batch_size: 1024
+batch_size: 200
+epochs: 300
 eval_freq: 10
 eval_on_env_freq: 20
 num_env_evals: 20
 num_final_evals: 20
 num_final_eval_per_goal: 5
-action_window_size: TODO
+action_window_size: 1
 sequentially_select: false
-vqvae_load_dir: "YOUR_PATH_TO_PRETRAINED_VQVAE/trained_vqvae.pt"
+vqvae_load_dir: /home/irmak//Workspace/third-person-manipulation/out/checkpoints/vqbet/2024-05-23/17-18-40/scarlet-leaf-50/trained_vqvae.pt
 goal_dim: 0
+view_num: 2 
+train_fraction: 0.6
+visual_input: false
 
 wandb:
   project: "vq-bet"
@@ -35,15 +39,23 @@ env:
     env:
       _target_: gym.make
       id: kitchen-v0
-    visual_input: ${visual_input}
+    # visual_input: ${visual_input}
   obs_dim: 512
   act_dim: 24
-  goal_dim: ${goal_dim}
+  goal_dim: 0
 
 
 data:
-  _target_: TODO
-  TODO
+  _target_: dataset.get_retargeting_train_val
+  data_directory: ${env_vars.datasets.retargeting}
+  train_fraction: ${train_fraction}
+  window_size: ${window_size}
+  future_seq_len: ${goal_window_size}
+  min_future_sep: ${action_window_size}
+  action_window_size: ${action_window_size}
+  vqbet_get_future_action_chunk: true
+  # clipping_index_list: ${clipping_index_list}
+  view_num: ${view_num}
 
 save_every: 10
 save_path: "${env_vars.save_path}/checkpoints/${env.gym.id}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
@@ -51,40 +63,43 @@ load_path: null
 
 model:
   _target_: vq_behavior_transformer.BehaviorTransformer
-  obs_dim: ${env.obs_dim}
+  # obs_dim: ${env.obs_dim}
+  obs_dim: 512
   act_dim: ${env.act_dim}
   goal_dim: ${env.goal_dim}
   obs_window_size: ${window_size}
   act_window_size: ${action_window_size}
   sequentially_select: ${sequentially_select}
+  visual_input: false
   gpt_model:
     _target_: vq_behavior_transformer.GPT
     config:
       _target_: vq_behavior_transformer.GPTConfig
       block_size: 110
-      input_dim: ${env.obs_dim}
+      # input_dim: ${env.obs_dim}
+      input_dim: 512
       n_layer: 6
       n_head: 6
       n_embd: 120
   vqvae_model:
     _target_: vqvae.VqVae
-    obs_dim: TODO
+    obs_dim: 512
     input_dim_h: ${action_window_size}
     input_dim_w: ${env.act_dim}
     n_latent_dims: 512
-    vqvae_n_embed: 10
+    vqvae_n_embed: 16
     vqvae_groups: 2
     eval: true
     device: ${device}
     load_dir: ${vqvae_load_dir}
-  offset_loss_multiplier: TODO
-  secondary_code_multiplier: TODO
+  offset_loss_multiplier: 0.1
+  secondary_code_multiplier: 3
 
-goal_fn:
-  _target_: retargeting_env.get_goal_fn
-  data_directory: ${env_vars.datasets.retargeting}
-  goal_conditional: ${data.goal_conditional}
-  seed: ${seed}
-  train_fraction: 0.95
-  goal_seq_len: ${goal_window_size}
-  unconditional: true
+# goal_fn:
+#   _target_: retargeting_env.get_goal_fn
+#   data_directory: ${env_vars.datasets.retargeting}
+#   goal_conditional: ${data.goal_conditional}
+#   seed: ${seed}
+#   train_fraction: 0.95
+#   goal_seq_len: ${goal_window_size}
+#   unconditional: true

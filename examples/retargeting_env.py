@@ -289,3 +289,6 @@ register(
     max_episode_steps=280,
     reward_threshold=4.0,
 )
+
+# There are things to decide: 
+    # we need to have an environment
