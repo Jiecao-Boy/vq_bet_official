@@ -149,13 +149,16 @@ def visualization_nn(frame_ids_list, data_directory, view_num, save_dir):
 
     return 
 
-def get_deploy_data(deploy_directory, view_num):
+def get_deploy_data(deploy_directory, view_num, model_type):
     roots = sorted(glob.glob(f'{deploy_directory}/*/1'))
     deployment_length = []
     all_representations = []
     for num in tqdm.trange(len(roots)):
         deployment = roots[num]
-        save_path = deployment + '/deployment_byol_representations_cam_{}.pkl'.format(view_num)
+        save_path = deployment + '/deployment_{}_{}_{}_representations_cam_{}.pkl'.format(model_type['model'],
+                                                                                          model_type['ckpt'],
+                                                                                          model_type['param'], view_num)
+        # save_path = deployment + '/deployment_{}_representations_cam_{}.pkl'.format(model_type, view_num)
         with open(save_path, 'rb') as file:
             representations = pickle.load(file)
         all_representations.append(representations)
@@ -221,7 +224,7 @@ def visualization_demo_nn(deploy_ids, frame_ids_list, deploy_directory, data_dir
         ax.set_title(title) 
         
         plt.tight_layout()
-        save_path = save_dir + '/sample_{}_{}.png'.format(demo_idx, deploy_ids)
+        save_path = save_dir + '/sample_{}.png'.format(deploy_ids)
         plt.savefig(save_path)
     
         # plt.show()
@@ -237,13 +240,15 @@ def main():
     data_directory = Path('/data/irmak/third_person_manipulation/detergent_new_1')
     deploy_directory = Path('/data/irmak/third_person_manipulation/deployments/detergent_new_1')
     view_num = 2
+    model_type = {'model':'dynamics', 'ckpt': 9, 'param': '010'} #byol_keypoint,  byol, dynamics
+    # model_type = 'dynamics'
     demo_dict = crop_demo(data_directory, view_num)
     demo_length = get_demo_length(data_directory, view_num)
 
-    find_human_nn_from_deploy = False
+    find_human_nn_from_deploy = True
     if find_human_nn_from_deploy:
-        deploy_representations, deployment_length = get_deploy_data(deploy_directory, view_num)
-        _, test_data = get_retargeting_train_val(data_directory, vqbet_get_future_action_chunk = False, view_num = view_num, window_size = 1, action_window_size = 1, train_fraction = 0)
+        deploy_representations, deployment_length = get_deploy_data(deploy_directory, view_num, model_type)
+        _, test_data = get_retargeting_train_val(data_directory, model_type, vqbet_get_future_action_chunk = False, view_num = view_num, window_size = 1, action_window_size = 1, train_fraction = 0)
         sampled_indices = random.sample(list(range(sum(deployment_length))), 10)
         for idx in sampled_indices:
             repr = deploy_representations[idx]
@@ -261,7 +266,9 @@ def main():
                     deploy_ids = (demo_idx, idx)    
                     break
 
-            visualization_save_dir = '/data/irmak/third_person_manipulation/detergent_new_1'
+            visualization_save_dir = '/data/irmak/third_person_manipulation/detergent_new_1/{}_nn'.format(model_type)
+            if not os.path.exists(visualization_save_dir):
+                os.mkdir(visualization_save_dir)
             visualization_demo_nn(deploy_ids, frame_ids_list, deploy_directory,  data_directory, view_num, visualization_save_dir)
                 
     else: 
@@ -279,8 +286,5 @@ def main():
             visualization_save_dir = '/data/irmak/third_person_manipulation/detergent_new_1'
             visualization_nn(frame_ids_list, data_directory, view_num, visualization_save_dir)
 
-
-
-    
 if __name__ == '__main__':
     main()

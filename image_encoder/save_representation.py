@@ -11,6 +11,7 @@ import torch
 import hydra
 import pickle
 from pathlib import Path
+from functools import partial
 
 from PIL import Image as im
 from omegaconf import OmegaConf
@@ -18,42 +19,69 @@ import torchvision.transforms as T
 from collections import OrderedDict
 from third_person_man.utils import VISION_IMAGE_MEANS, VISION_IMAGE_STDS, crop_transform
 
-def init_encoder_info(out_dir, device):
+def init_encoder_info(out_dir, device, model_type):
     cfg = OmegaConf.load(os.path.join(out_dir, '.hydra/config.yaml'))
-    image_encoder_path = os.path.join(out_dir, 'models/byol_encoder_best.pt')
-    image_encoder = load_model(cfg, device, image_encoder_path, model_type='image')
+
+    if model_type['model'] == 'dynamics':
+        ckpt = model_type['ckpt']
+        model_path = os.path.join(out_dir, f'snapshot_{ckpt}.pt')
+        # model_path   = os.path.join(out_dir, f'snapshot_49.pt')
+        print("***Loading image encoder at {}***".format(model_path))
+        image_encoder = load_model(cfg, device, model_path, model_type = 'dynamics')
+        image_encoder.eval()    
+    else:
+        image_encoder_path = os.path.join(out_dir, 'models/byol_encoder_best.pt')
+        image_encoder = load_model(cfg, device, image_encoder_path, model_type='image')    
     return image_encoder 
 
-def load_model(cfg, device, model_path, model_type=None):
+def load_model(cfg, device, model_path, model_type):
     # Initialize the model
-    if cfg.learner_type == 'bc':
-        if model_type == 'image':
-            model = hydra.utils.instantiate(cfg.encoder.image_encoder)
-        elif model_type == 'tactile':
-            model = hydra.utils.instantiate(cfg.encoder.tactile_encoder)
-        elif model_type == 'last_layer':
-            model = hydra.utils.instantiate(cfg.encoder.last_layer)
-    elif cfg.learner_type == 'bc_gmm':
-        model = hydra.utils.instantiate(cfg.learner.gmm_layer)
-    elif cfg.learner_type == 'temporal_ssl':
-        if model_type == 'image':
-            model = hydra.utils.instantiate(cfg.encoder.encoder)
-        elif model_type == 'linear_layer':
-            model = hydra.utils.instantiate(cfg.encoder.linear_layer)
+    if model_type != 'dynamics':
+        if cfg.learner_type == 'bc':
+            if model_type == 'image':
+                model = hydra.utils.instantiate(cfg.encoder.image_encoder)
+            elif model_type == 'tactile':
+                model = hydra.utils.instantiate(cfg.encoder.tactile_encoder)
+            elif model_type == 'last_layer':
+                model = hydra.utils.instantiate(cfg.encoder.last_layer)
+        elif cfg.learner_type == 'bc_gmm':
+            model = hydra.utils.instantiate(cfg.learner.gmm_layer)
+        elif cfg.learner_type == 'temporal_ssl':
+            if model_type == 'image':
+                model = hydra.utils.instantiate(cfg.encoder.encoder)
+            elif model_type == 'linear_layer':
+                model = hydra.utils.instantiate(cfg.encoder.linear_layer)
+        else:
+            model = hydra.utils.instantiate(cfg.model)  
+    else: 
+        model = hydra.utils.instantiate(cfg.encoder) 
+
+    if model_type == 'dynamics':
+        print("***Loading DynaMo Model***")
+        os.environ['RANK'] = '0'
+        os.environ['WORLD_SIZE'] = '1'
+        os.environ['MASTER_ADDR'] = 'localhost'
+        os.environ['MASTER_PORT'] = '1234'
+        torch.distributed.init_process_group()
+
+
+        ckpt = torch.load(model_path)
+        model = ckpt["encoder"]
     else:
-        model = hydra.utils.instantiate(cfg.model)  
+        state_dict = torch.load(model_path) # All the parameters by default gets installed to cuda 0
 
-    state_dict = torch.load(model_path) # All the parameters by default gets installed to cuda 0
-    
-    # Modify the state dict accordingly - this is needed when multi GPU saving was done
-    if cfg.distributed:
-        state_dict = modify_multi_gpu_state_dict(state_dict)
-    
-    if 'byol' in cfg.learner_type or 'vicreg' in cfg.learner_type:
-        state_dict = modify_byol_state_dict(state_dict)
 
-    # Load the new state dict to the model 
-    model.load_state_dict(state_dict)
+        # Modify the state dict accordingly - this is needed when multi GPU saving was done
+
+        if cfg.distributed:
+            state_dict = modify_multi_gpu_state_dict(state_dict)
+        
+        if 'byol' in cfg.learner_type or 'vicreg' in cfg.learner_type:
+            state_dict = modify_byol_state_dict(state_dict)
+
+        # Load the new state dict to the model 
+        # print("State Dict", state_dict)
+        model.load_state_dict(state_dict)
     model = model.to(device)
     return model
 
@@ -96,15 +124,26 @@ def dump_video_frames(video_path, output_folder):
 
 
 
-def save_image_representations(data_path, out_dir, device, view_num):
+def save_image_representations(data_path, image_encoder, device, view_num, model_type):
     # Load encoder
-    image_transform = T.Compose([
-        T.Resize((480,640)),
-        T.Lambda(crop_transform),
-        T.ToTensor(),
-        T.Normalize(VISION_IMAGE_MEANS, VISION_IMAGE_STDS),
-        ])
-    image_encoder = init_encoder_info(out_dir, device)
+    print("***Saving image representations, model type:{}***".format(model_type))
+    if model_type['model'] != 'dynamics':
+        partial_crop_transform = partial(crop_transform, camera_view = view_num, image_size = 480)
+        image_transform = T.Compose([
+            T.Resize((480,640)),
+            T.Lambda(partial_crop_transform),
+            T.ToTensor(),
+            T.Normalize(VISION_IMAGE_MEANS, VISION_IMAGE_STDS),
+            ])
+    else:
+        partial_crop_transform = partial(crop_transform, camera_view = view_num, image_size = 224)
+        image_transform = T.Compose([
+            T.Resize((244,325)),
+            T.Lambda(partial_crop_transform),
+            T.ToTensor(),
+            ])
+
+
     roots = sorted(glob.glob(f'{data_path}/demonstration_*'))
     print(roots)
     
@@ -114,7 +153,9 @@ def save_image_representations(data_path, out_dir, device, view_num):
 
         demo = roots[num]
         demo_representations = []
-        save_path = demo + '/img_byol_representations_cam_{}.pkl'.format(view_num)
+        save_path = demo + '/img_{}_{}_{}_representations_cam_{}.pkl'.format(model_type['model'],
+                                                                       model_type['ckpt'],
+                                                                       model_type['param'], view_num)
         if os.path.exists(save_path):
             os.remove(save_path)
 
@@ -138,15 +179,24 @@ def save_image_representations(data_path, out_dir, device, view_num):
             torch.cuda.empty_cache()
     return
 
-def save_deployment_representations(deployment_path, out_dir, device, view_num):
+def save_deployment_representations(deployment_path, image_encoder, device, view_num, model_type):
     # Load encoder
-    image_transform = T.Compose([
-        T.Resize((480,640)),
-        T.Lambda(crop_transform),
-        T.ToTensor(),
-        T.Normalize(VISION_IMAGE_MEANS, VISION_IMAGE_STDS),
-        ])
-    image_encoder = init_encoder_info(out_dir, device)
+    print("***Saving deployment representations, model type:{}***".format(model_type))
+    if model_type['model'] != 'dynamics':
+        partial_crop_transform = partial(crop_transform, camera_view = view_num, image_size = 480)
+        image_transform = T.Compose([
+            T.Resize((480,640)),
+            T.Lambda(partial_crop_transform),
+            T.ToTensor(),
+            T.Normalize(VISION_IMAGE_MEANS, VISION_IMAGE_STDS),
+            ])
+    else:
+        partial_crop_transform = partial(crop_transform, camera_view = view_num, image_size = 224)
+        image_transform = T.Compose([
+            T.Resize((244,325)),
+            T.Lambda(partial_crop_transform),
+            T.ToTensor(),
+            ])
 
     
     roots = sorted(glob.glob(f'{deployment_path}/*/1'))
@@ -166,7 +216,9 @@ def save_deployment_representations(deployment_path, out_dir, device, view_num):
     for num in tqdm.trange(len(roots)):
         demo = roots[num]
         demo_representations = []
-        save_path = demo + '/deployment_byol_representations_cam_{}.pkl'.format(view_num)
+        save_path = demo + '/deployment_{}_{}_{}_representations_cam_{}.pkl'.format(model_type['model'],
+                                                                                    model_type['ckpt'],
+                                                                                    model_type['param'], view_num)
         if os.path.exists(save_path):
             os.remove(save_path)
 
@@ -190,16 +242,21 @@ def save_deployment_representations(deployment_path, out_dir, device, view_num):
 
     
 if __name__ == '__main__':
-    out_dir = Path('/home/irmak/Workspace/third-person-manipulation/out/2024.05.21/18-32_detergent_new_1_byol_seed_5')
+    # out_dir = Path('/home/irmak/Workspace/third-person-manipulation/out/2024.05.21/18-32_detergent_new_1_byol_seed_5')
+    out_dir = Path('/home/yinlong/Desktop/baby-to-robot/exp_local/2024.06.02/135702_retargeting_test_10')
+    # out_dir = Path('/home/yinlong/Desktop/third-person-manipulation/out/2024.05.29/16-34_detergent_new_1_byol_with_keypoint_augmentation_seed_5')
     device = torch.device('cuda:0')
     data_path = Path('/data/irmak/third_person_manipulation/detergent_new_1')
-    view_num =2
-
     save_deployment = True 
     deployment_path = Path('/data/irmak/third_person_manipulation/deployments/detergent_new_1')
-    save_image_representations(data_path, out_dir, device, view_num)
+    view_num =2
+
+    model_type = {'model':'dynamics', 'ckpt': 49, 'param': "101"} #byol_keypoint,  byol, dynamics
+    image_encoder = init_encoder_info(out_dir, device, model_type)
     if save_deployment: 
-        save_deployment_representations(deployment_path,out_dir, device, view_num )
+        save_deployment_representations(deployment_path, image_encoder, device, view_num, model_type )
+    save_image_representations(data_path, image_encoder, device, view_num, model_type)
+    
 
 
 

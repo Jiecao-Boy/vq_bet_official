@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import pickle
 from torch import default_generator, randperm
-from torch._utils import _accumulate
+# from torch._utils import _accumulate
 from torch.utils.data import Dataset, Subset, TensorDataset
 import pathlib
 import tqdm
@@ -20,6 +20,20 @@ from torchvision import transforms as T
 from torchvision.datasets.folder import default_loader as loader 
 from third_person_man.utils import VISION_IMAGE_MEANS, VISION_IMAGE_STDS, crop_transform, crop_demo, convert_to_demo_frame_ids
 from third_person_man.calibration import CalibrateFingertips
+
+def _accumulate(iterable, fn=lambda x, y: x + y):
+    "Return running totals"
+    # _accumulate([1,2,3,4,5]) --> 1 3 6 10 15
+    # _accumulate([1,2,3,4,5], operator.mul) --> 1 2 6 24 120
+    it = iter(iterable)
+    try:
+        total = next(it)
+    except StopIteration:
+        return
+    yield total
+    for element in it:
+        total = fn(total, element)
+        yield total
 
 
 # loads h5 data into memory for faster access
@@ -193,7 +207,7 @@ class TrajectorySubset(TrajectoryDataset, Subset):
 ## NOTE: retargeting dataset is added
 class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
     def __init__(
-            self, data_directory, device="cuda", view_num = 0, get_observation = False
+            self, data_directory, model_type, device="cuda", view_num = 0, get_observation = False
     ):
         self.data_directory = Path(data_directory)
         self.view_num = view_num
@@ -225,7 +239,11 @@ class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
             # calibrate_camera_num = 0 
             # fingertips = CalibrateFingertips(demo, calibrate_camera_num, 0.05, '172.24.71.206', 10005)
             keypoint_file = Path(demo + '/demo_in_aruco.pkl')
-            representation_file = Path(demo + '/img_byol_representations_cam_{}.pkl'.format(view_num))
+            # 
+            representation_file = Path(demo + '/img_{}_{}_{}_representations_cam_{}.pkl'.format(model_type['model'],
+                                                                                                model_type['ckpt'], 
+                                                                                                model_type['param'], view_num))
+            # representation_file = Path(demo + '/img_{}_representations_cam_{}.pkl'.format(model_type, view_num))
             with open(keypoint_file, 'rb') as file:
                 data = pickle.load(file)
             with open(representation_file, 'rb') as file:
@@ -808,6 +826,7 @@ def get_relay_kitchen_train_val(
 ## NOTE
 def get_retargeting_train_val(
     data_directory,
+    model_type,
     train_fraction=0.9,
     random_seed=42,
     window_size=10,
@@ -822,6 +841,7 @@ def get_retargeting_train_val(
     return get_train_val_sliced(
         RetargetingTrajectoryDataset(
             data_directory,
+            model_type,
             view_num = view_num,
             get_observation= True
         ),
