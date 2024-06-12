@@ -136,8 +136,10 @@ def save_image_representations(data_path, image_encoder, device, view_num, model
             T.Normalize(VISION_IMAGE_MEANS, VISION_IMAGE_STDS),
             ])
     else:
+        print("dynamics")
         partial_crop_transform = partial(crop_transform, camera_view = view_num, image_size = 224)
         image_transform = T.Compose([
+            T.RandomVerticalFlip(p=1.0),           
             T.Resize((244,325)),
             T.Lambda(partial_crop_transform),
             T.ToTensor(),
@@ -191,8 +193,10 @@ def save_deployment_representations(deployment_path, image_encoder, device, view
             T.Normalize(VISION_IMAGE_MEANS, VISION_IMAGE_STDS),
             ])
     else:
+        print("dynamics")
         partial_crop_transform = partial(crop_transform, camera_view = view_num, image_size = 224)
         image_transform = T.Compose([
+            T.RandomVerticalFlip(p=1.0),
             T.Resize((244,325)),
             T.Lambda(partial_crop_transform),
             T.ToTensor(),
@@ -243,7 +247,7 @@ def save_deployment_representations(deployment_path, image_encoder, device, view
     
 if __name__ == '__main__':
     # out_dir = Path('/home/irmak/Workspace/third-person-manipulation/out/2024.05.21/18-32_detergent_new_1_byol_seed_5')
-    out_dir = Path('/home/yinlong/Desktop/baby-to-robot/exp_local/2024.06.02/135702_retargeting_test_10')
+    out_dir = Path('/home/yinlong/Desktop/baby-to-robot/exp_local/2024.06.07/135525_flipped_pretrained')
     # out_dir = Path('/home/yinlong/Desktop/third-person-manipulation/out/2024.05.29/16-34_detergent_new_1_byol_with_keypoint_augmentation_seed_5')
     device = torch.device('cuda:0')
     data_path = Path('/data/irmak/third_person_manipulation/detergent_new_1')
@@ -251,7 +255,7 @@ if __name__ == '__main__':
     deployment_path = Path('/data/irmak/third_person_manipulation/deployments/detergent_new_1')
     view_num =2
 
-    model_type = {'model':'dynamics', 'ckpt': 49, 'param': "101"} #byol_keypoint,  byol, dynamics
+    model_type = {'model':'dynamics', 'ckpt': 39, 'param': "100_flipped_pretrained"} #byol_keypoint,  byol, dynamics
     image_encoder = init_encoder_info(out_dir, device, model_type)
     if save_deployment: 
         save_deployment_representations(deployment_path, image_encoder, device, view_num, model_type )

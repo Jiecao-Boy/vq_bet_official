@@ -240,7 +240,7 @@ def main():
     data_directory = Path('/data/irmak/third_person_manipulation/detergent_new_1')
     deploy_directory = Path('/data/irmak/third_person_manipulation/deployments/detergent_new_1')
     view_num = 2
-    model_type = {'model':'dynamics', 'ckpt': 9, 'param': '010'} #byol_keypoint,  byol, dynamics
+    model_type = {'model':'dynamics', 'ckpt': 39, 'param': "100_flipped_pretrained"}  #byol_keypoint,  byol, dynamics
     # model_type = 'dynamics'
     demo_dict = crop_demo(data_directory, view_num)
     demo_length = get_demo_length(data_directory, view_num)

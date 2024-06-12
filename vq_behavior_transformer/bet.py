@@ -58,13 +58,21 @@ class BehaviorTransformer(nn.Module):
 
         if self.sequentially_select:
             print("use sequantial prediction for vq dictionary!")
+            # self._map_to_cbet_preds_bin1 = MLP(
+            #     in_channels=gpt_model.config.output_dim,
+            #     hidden_channels=[512, 512, self._C],
+            # )
+            # self._map_to_cbet_preds_bin2 = MLP(
+            #     in_channels=gpt_model.config.output_dim + self._C,
+            #     hidden_channels=[512, self._C],
+            # )
             self._map_to_cbet_preds_bin1 = MLP(
                 in_channels=gpt_model.config.output_dim,
-                hidden_channels=[512, 512, self._C],
+                hidden_channels = [self._C],
             )
             self._map_to_cbet_preds_bin2 = MLP(
                 in_channels=gpt_model.config.output_dim + self._C,
-                hidden_channels=[512, self._C],
+                hidden_channels = [self._C],
             )
         else:
             self._map_to_cbet_preds_bin = MLP(
@@ -176,7 +184,7 @@ class BehaviorTransformer(nn.Module):
                     goal_seq = self._resnet_header(goal_seq)
                     goal_seq = einops.rearrange(goal_seq, "(N T) L -> N T L", N=N)
         if obs_seq.shape[1] < self.obs_window_size:
-            print('**********obs shape in first dimension:{}'.format(obs_seq.shape[1]))
+            # print('**********obs shape in first dimension:{}'.format(obs_seq.shape))
             obs_seq = torch.cat(
                 (
                     torch.tile(
@@ -205,13 +213,14 @@ class BehaviorTransformer(nn.Module):
         obs = einops.rearrange(obs_seq, "N T O -> (N T) O")
         obs = obs.unsqueeze(dim=1)
 
+        temperature = 1
         if self.sequentially_select:
             cbet_logits1 = self._map_to_cbet_preds_bin1(gpt_output)
             cbet_offsets = self._map_to_cbet_preds_offset(gpt_output)
             cbet_offsets = einops.rearrange(
                 cbet_offsets, "(NT) (G C WA) -> (NT) G C WA", G=self._G, C=self._C
             )
-            cbet_probs1 = torch.softmax(cbet_logits1, dim=-1)
+            cbet_probs1 = torch.softmax(cbet_logits1 / temperature, dim=-1)
             NT, choices = cbet_probs1.shape
             G = self._G
             sampled_centers1 = einops.rearrange(
@@ -225,7 +234,7 @@ class BehaviorTransformer(nn.Module):
                     axis=1,
                 )
             )
-            cbet_probs2 = torch.softmax(cbet_logits2, dim=-1)
+            cbet_probs2 = torch.softmax(cbet_logits2 / temperature, dim=-1)
             sampled_centers2 = einops.rearrange(
                 torch.multinomial(cbet_probs2.view(-1, choices), num_samples=1),
                 "(NT) 1 -> NT",
@@ -243,7 +252,7 @@ class BehaviorTransformer(nn.Module):
             cbet_offsets = einops.rearrange(
                 cbet_offsets, "(NT) (G C WA) -> (NT) G C WA", G=self._G, C=self._C
             )
-            cbet_probs = torch.softmax(cbet_logits, dim=-1)
+            cbet_probs = torch.softmax(cbet_logits / temperature, dim=-1)
             NT, G, choices = cbet_probs.shape
             sampled_centers = einops.rearrange(
                 torch.multinomial(cbet_probs.view(-1, choices), num_samples=1),

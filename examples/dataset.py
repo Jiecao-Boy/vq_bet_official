@@ -207,17 +207,17 @@ class TrajectorySubset(TrajectoryDataset, Subset):
 ## NOTE: retargeting dataset is added
 class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
     def __init__(
-            self, data_directory, model_type, device="cuda", view_num = 0, get_observation = False
+            self, data_directory, model_type, device="cuda", view_num = 0, get_observation = False, concat_obs_action = False
     ):
         self.data_directory = Path(data_directory)
         self.view_num = view_num
-
-        self.image_transform = T.Compose([
-            T.Resize((480,640)),
-            T.Lambda(self._crop_transform),
-            T.ToTensor(),
-            T.Normalize(VISION_IMAGE_MEANS, VISION_IMAGE_STDS)
-        ])
+        self.concat_obs_action = concat_obs_action
+        # self.image_transform = T.Compose([
+        #     T.Resize((480,640)),
+        #     T.Lambda(self._crop_transform),
+        #     T.ToTensor(),
+        #     T.Normalize(VISION_IMAGE_MEANS, VISION_IMAGE_STDS)
+        # ])
 
         # Get demo cropping index
         demo_dict = crop_demo(self.data_directory, view_num)
@@ -279,18 +279,35 @@ class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
         if get_observation:
             observations = torch.stack(observations)
         self.actions = torch.stack(actions)
+
+
+        if self.concat_obs_action == True:
+            # we want to concat previous action duplicated 10 times to the observation
+            demo_num, demo_length, action_dim = self.actions.shape
+            print('demo_num: {}'.format(demo_num))
+            print('demo_length: {}'.format(demo_length))
+
+            actions = self.actions.repeat(1,1,10)
+            # Because we need to concat current obs with previous action,
+            # we are bringing the last action tensor for each demo, padded with 0s, to the beginning
+            for demo in range(demo_num):
+                actions[demo] = torch.concat((torch.reshape(actions[demo][-1],(1, -1)), actions[demo][:-1]))
+            
+            observations = torch.concat((observations, actions),dim = 2)
+
         if get_observation:
             tensors = [observations, self.actions]
         else: tensors = [self.actions]
         tensors = [t.to(device).float() for t in tensors]
-        TensorDataset.__init__(self, *tensors)
-        if get_observation:
-            print('data_size: ', observations.shape, self.actions.shape)
-        else:
-            print('data_size: ', self.actions.shape)
+        TensorDataset.__init__(self, *tensors)           
 
-    def _crop_transform(self, image):
-        return crop_transform(image, camera_view=self.view_num) 
+        if get_observation:
+            print('data_size: ', self.tensors[0].shape, self.actions.shape)
+        else:
+            print('data_size: ', self.actions.shape)               
+            
+    # def _crop_transform(self, image):
+    #     return crop_transform(image, camera_view=self.view_num) 
     
     def convert_fingertips_to_data_format(self, fingertips):
         finger_types = ['index', 'middle', 'ring', 'thumb', 'index_1', 'middle_1', 'ring_1', 'thumb_1']
@@ -837,13 +854,15 @@ def get_retargeting_train_val(
     min_future_sep: int = 0,
     view_num: int = 2, 
     transform: Optional[Callable[[Any], Any]] = None,
+    concat_obs_action = False
 ):
     return get_train_val_sliced(
         RetargetingTrajectoryDataset(
             data_directory,
             model_type,
             view_num = view_num,
-            get_observation= True
+            get_observation= True,
+            concat_obs_action = concat_obs_action
         ),
         train_fraction,
         random_seed,
@@ -924,3 +943,10 @@ def get_ur3_train_val(
 
 def transpose_batch_timestep(*args):
     return (einops.rearrange(arg, "b t ... -> t b ...") for arg in args)
+
+
+
+if __name__ == '__main__':
+    data_dir = '/data/irmak/third_person_manipulation/detergent_new_1/'
+    model_type = {"model": 'dynamics',"ckpt":39,"param":'100_flipped_pretrained'}
+    dataset =  RetargetingTrajectoryDataset(data_dir, model_type, device="cuda", view_num = 2, get_observation = True, concat_obs_action = True)

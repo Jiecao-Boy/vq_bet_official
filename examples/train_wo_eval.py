@@ -80,7 +80,6 @@ def main(cfg):
                     # obs, act, goal = (x.to(cfg.device) for x in data)
                     # predicted_act, loss, loss_dict = cbet_model(obs, goal, act)
                     obs, act = (x.to(cfg.device) for x in data)
-                    print('shape of sampled observation: {}'.format(obs.shape))
                     # bet model should accept None goal as long as goal_dim is set to 0 
                     predicted_act, loss, loss_dict = cbet_model(obs, None, act)
                     total_loss += loss.item()
@@ -117,6 +116,7 @@ def main(cfg):
                 optimizer["optimizer2"].step()
 
         if epoch % cfg.save_every == 0:
+            print("model_saved:{}".format(save_path))
             cbet_model.save_model(save_path)
 
     return 
