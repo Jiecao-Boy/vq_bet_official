@@ -3,7 +3,7 @@ defaults:
   - _self_
 
 seed: 42
-window_size: 5
+window_size: 20
 goal_window_size: 10
 eval_window_size: 10
 # batch_size: 1024
@@ -22,7 +22,7 @@ wandb:
   project: "vq-bet"
   entity: ${env_vars.wandb_entity}
 
-device: cuda
+device: 0
 optim:
   lr: 5.5e-5
   weight_decay: 2e-4
@@ -32,6 +32,7 @@ optim:
 data:
   _target_: dataset.get_retargeting_train_val
   data_directory: ${env_vars.datasets.retargeting}
+  model_type: {"model":dynamics,"ckpt":39,"param":'100_flipped_pretrained'}
   window_size: ${window_size}
   future_seq_len: ${goal_window_size}
   min_future_sep: ${action_window_size}
@@ -39,6 +40,8 @@ data:
   vqbet_get_future_action_chunk: false
   # clipping_index_list: ${clipping_index_list}
   view_num: ${view_num}
+  obs_type: "action_obs" # can be "obs_only" dim = 512, "state_only" dim = 24, "action_obs" dim = 752
+  action_type: "pos_only" # can be "pos_ori", 'pos_only', 'delta' (not yet implemented)
 
 save_every: 10
 # save_path: "${env_vars.save_path}/checkpoints/${env.gym.id}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
@@ -47,10 +50,11 @@ load_path: null
 
 vqvae_model:
   _target_: vqvae.VqVae
-  obs_dim: 512
+  # obs_dim: 512
+  obs_dim: 632
   input_dim_h: ${action_window_size}
   # input_dim_w: ${env.act_dim}
-  input_dim_w: 24
+  input_dim_w: 12
   n_latent_dims: 512
   vqvae_n_embed: 16
   vqvae_groups: 2

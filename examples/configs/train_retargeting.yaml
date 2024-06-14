@@ -24,7 +24,10 @@ sequentially_select: true
 # vqvae_load_dir: /home/yinlong/Desktop/third-person-manipulation/out/checkpoints/vqbet/2024-06-07/15-38-05/honest-paper-67/trained_vqvae.pt
 # vqvae_load_dir: /home/yinlong/Desktop/third-person-manipulation/out/checkpoints/vqbet/2024-06-07/16-17-49/comfy-darkness-70/trained_vqvae.pt
 # vqvae_load_dir: /home/yinlong/Desktop/third-person-manipulation/out/checkpoints/vqbet/2024-06-11/13-07-18/smart-pine-73/trained_vqvae.pt
-vqvae_load_dir: /home/yinlong/Desktop/third-person-manipulation/out/checkpoints/vqbet/2024-06-11/15-38-55/glamorous-plasma-77/trained_vqvae.pt
+# vqvae_load_dir: /home/yinlong/Desktop/third-person-manipulation/out/checkpoints/vqbet/2024-06-11/15-38-55/glamorous-plasma-77/trained_vqvae.pt
+# vqvae_load_dir: /home/yinlong//Desktop/third-person-manipulation/out/checkpoints/vqbet/2024-06-14/12-06-01/rosy-oath-104/trained_vqvae.pt
+# vqvae_load_dir: /home/yinlong/Desktop/third-person-manipulation/out/checkpoints/vqbet/2024-06-14/14-44-43/earthy-sunset-108/trained_vqvae.pt
+vqvae_load_dir: /home/yinlong/Desktop/third-person-manipulation/out/checkpoints/vqbet/2024-06-14/15-25-07/eternal-surf-110/trained_vqvae.pt
 goal_dim: 0
 view_num: 2 
 train_fraction: 0.6
@@ -49,8 +52,8 @@ env:
       id: kitchen-v0
     # visual_input: ${visual_input}
   # obs_dim: 512
-  obs_dim: 752
-  act_dim: 24
+  obs_dim: 632
+  act_dim: 12
   goal_dim: 0
 
 
@@ -66,7 +69,8 @@ data:
   vqbet_get_future_action_chunk: true
   # clipping_index_list: ${clipping_index_list}
   view_num: ${view_num}
-  concat_obs_action: true
+  obs_type: "action_obs" # can be "obs_only" dim = 512, "state_only" dim = 24, "action_obs" dim = 752
+  action_type: "pos_only"
 
 save_every: 10
 save_path: "${env_vars.save_path}/checkpoints/${env.gym.id}/${now:%Y-%m-%d}/${now:%H-%M-%S}"
@@ -76,7 +80,7 @@ model:
   _target_: vq_behavior_transformer.BehaviorTransformer
   # obs_dim: ${env.obs_dim}
   # obs_dim: 512
-  obs_dim: 752
+  obs_dim: 632
   act_dim: ${env.act_dim}
   goal_dim: ${env.goal_dim}
   obs_window_size: ${window_size}
@@ -90,14 +94,14 @@ model:
       block_size: 110
       # input_dim: ${env.obs_dim}
       # input_dim: 512
-      input_dim: 752 
+      input_dim: 632
       n_layer: 6
       n_head: 6
       n_embd: 120
   vqvae_model:
     _target_: vqvae.VqVae
     # obs_dim: 512
-    obs_dim: 752
+    obs_dim: 632
     input_dim_h: ${action_window_size}
     input_dim_w: ${env.act_dim}
     n_latent_dims: 512

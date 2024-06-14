@@ -1,7 +1,7 @@
 
 # TODO fill these out
 dataset_path: /data/irmak/third_person_manipulation/detergent_new_1 # (i.e. /home/user/vqbet/vqbet_datasets_for_release)
-save_path: /home/irmak/Workspace/third-person-manipulation/out # (i.e. /home/user/vq-bet)
+save_path: /home/yinlong/Desktop/third-person-manipulation/out # (i.e. /home/user/vq-bet)
 wandb_entity: jiecaoboy
 
 datasets:

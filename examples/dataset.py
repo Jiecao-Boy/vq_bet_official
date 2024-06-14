@@ -207,11 +207,13 @@ class TrajectorySubset(TrajectoryDataset, Subset):
 ## NOTE: retargeting dataset is added
 class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
     def __init__(
-            self, data_directory, model_type, device="cuda", view_num = 0, get_observation = False, concat_obs_action = False
+            self, data_directory, model_type, device="cuda", view_num = 0, get_observation = False, 
+            obs_type = "obs_only", action_type = 'pos_ori'
     ):
         self.data_directory = Path(data_directory)
         self.view_num = view_num
-        self.concat_obs_action = concat_obs_action
+        self.obs_type = obs_type
+        self.action_type = action_type
         # self.image_transform = T.Compose([
         #     T.Resize((480,640)),
         #     T.Lambda(self._crop_transform),
@@ -256,8 +258,12 @@ class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
                     img_repr = torch.tensor(reps[idx])
                     demo_observations.append(img_repr.squeeze())
 
-                fingertips = self.convert_fingertips_to_data_format(data[idx-10]) ## NOTE: This would change 
-                demo_actions.append(fingertips)
+                fingertips = self.convert_fingertips_to_data_format(data[idx-15]) ## NOTE: This would change
+                
+                if action_type == 'pos_ori':
+                    demo_actions.append(fingertips)
+                elif action_type == 'pos_only':
+                    demo_actions.append(fingertips[:12])
             
             
             if get_observation:
@@ -280,20 +286,29 @@ class RetargetingTrajectoryDataset(TensorDataset, TrajectoryDataset):
             observations = torch.stack(observations)
         self.actions = torch.stack(actions)
 
-
-        if self.concat_obs_action == True:
+        # obs_type can be 'obs_only', 'action_obs', 'state_only'
+        if self.obs_type != 'obs_only':
             # we want to concat previous action duplicated 10 times to the observation
             demo_num, demo_length, action_dim = self.actions.shape
             print('demo_num: {}'.format(demo_num))
             print('demo_length: {}'.format(demo_length))
 
-            actions = self.actions.repeat(1,1,10)
+            
             # Because we need to concat current obs with previous action,
             # we are bringing the last action tensor for each demo, padded with 0s, to the beginning
             for demo in range(demo_num):
+                if self.obs_type == 'action_obs':
+                    actions = self.actions.repeat(1,1,10)
+                else: 
+                    actions = self.actions
                 actions[demo] = torch.concat((torch.reshape(actions[demo][-1],(1, -1)), actions[demo][:-1]))
+            if self.obs_type == 'action_obs':
+
+                observations = torch.concat((observations, actions),dim = 2)
             
-            observations = torch.concat((observations, actions),dim = 2)
+            if self.obs_type == 'state_only':
+                print(type(actions))
+                observations = actions
 
         if get_observation:
             tensors = [observations, self.actions]
@@ -854,7 +869,8 @@ def get_retargeting_train_val(
     min_future_sep: int = 0,
     view_num: int = 2, 
     transform: Optional[Callable[[Any], Any]] = None,
-    concat_obs_action = False
+    obs_type = "obs_only",
+    action_type = "pos_ori"
 ):
     return get_train_val_sliced(
         RetargetingTrajectoryDataset(
@@ -862,7 +878,8 @@ def get_retargeting_train_val(
             model_type,
             view_num = view_num,
             get_observation= True,
-            concat_obs_action = concat_obs_action
+            obs_type = obs_type,
+            action_type = action_type
         ),
         train_fraction,
         random_seed,
